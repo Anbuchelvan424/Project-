@@ -1,0 +1,60 @@
+import yfinance as yf
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+
+# 1. Load stock data
+def load_data(ticker='AAPL', start='2015-01-01', end='2023-12-31'):
+    df = yf.download(ticker, start=start, end=end)
+    return df['Close'].values.reshape(-1, 1), df
+
+# 2. Preprocess data
+def preprocess_data(data, look_back=60):
+    scaler = MinMaxScaler()
+    scaled = scaler.fit_transform(data)
+
+    X, y = [], []
+    for i in range(look_back, len(scaled)):
+        X.append(scaled[i-look_back:i, 0])
+        y.append(scaled[i, 0])
+    
+    X, y = np.array(X), np.array(y)
+    X = np.reshape(X, (X.shape[0], X.shape[1], 1))  # 3D for LSTM
+    return X, y, scaler
+
+# 3. Build LSTM model
+def build_model(input_shape):
+    model = Sequential()
+    model.add(LSTM(50, return_sequences=True, input_shape=input_shape))
+    model.add(Dropout(0.2))
+    model.add(LSTM(50, return_sequences=False))
+    model.add(Dropout(0.2))
+    model.add(Dense(1))
+    model.compile(optimizer='adam', loss='mean_squared_error')
+    return model
+
+# 4. Predict and plot
+def predict_and_plot(model, X, y, scaler, df, look_back):
+    predicted = model.predict(X)
+    predicted_prices = scaler.inverse_transform(predicted)
+    real_prices = scaler.inverse_transform(y.reshape(-1, 1))
+
+    plt.figure(figsize=(12,6))
+    plt.plot(real_prices, color='blue', label='Actual Price')
+    plt.plot(predicted_prices, color='red', label='Predicted Price')
+    plt.title('Stock Price Prediction')
+    plt.xlabel('Time')
+    plt.ylabel('Stock Price')
+    plt.legend()
+    plt.show()
+
+# Main pipeline
+if __name__ == "__main__":
+    raw_data, full_df = load_data('AAPL')
+    X, y, scaler = preprocess_data(raw_data)
+    model = build_model((X.shape[1], 1))
+    model.fit(X, y, epochs=10, batch_size=32)
+    predict_and_plot(model, X, y, scaler, full_df, 60)
